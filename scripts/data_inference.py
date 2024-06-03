@@ -13,11 +13,10 @@ import tqdm
 
 
 class CTReportDatasetinfer(Dataset):
-    def __init__(self, data_folder, csv_file, min_slices=20, resize_dim=500, force_num_frames=True, labels = "labels.csv"):
+    def __init__(self, data_folder, min_slices=20, resize_dim=500, force_num_frames=True, labels = "labels.csv"):
         self.data_folder = data_folder
         self.min_slices = min_slices
         self.labels = labels
-        self.accession_to_text = self.load_accession_text(csv_file)
         self.paths=[]
         self.samples = self.prepare_samples()
         self.transform = transforms.Compose([
@@ -26,49 +25,17 @@ class CTReportDatasetinfer(Dataset):
         ])
         self.nii_to_tensor = partial(self.nii_img_to_tensor, transform = self.transform)
 
-    def load_accession_text(self, csv_file):
-        df = pd.read_csv(csv_file)
-        accession_to_text = {}
-        for index, row in df.iterrows():
-            accession_to_text[row['VolumeName']] = row["Findings_EN"],row['Impressions_EN']
-        return accession_to_text
-
-
     def prepare_samples(self):
         samples = []
         patient_folders = glob.glob(os.path.join(self.data_folder, '*'))
-
-        # Read labels once outside the loop
-        test_df = pd.read_csv(self.labels)
-        test_label_cols = list(test_df.columns[1:])
-        test_df['one_hot_labels'] = list(test_df[test_label_cols].values)
-
+        
         for patient_folder in tqdm.tqdm(patient_folders):
             accession_folders = glob.glob(os.path.join(patient_folder, '*'))
-
             for accession_folder in accession_folders:
                 nii_files = glob.glob(os.path.join(accession_folder, '*.npz'))
-
                 for nii_file in nii_files:
-                    accession_number = nii_file.split("/")[-1]
-
-                    accession_number = accession_number.replace(".npz", ".nii.gz")
-                    if accession_number not in self.accession_to_text:
-                        continue
-
-                    impression_text = self.accession_to_text[accession_number]
-                    text_final = ""
-                    for text in list(impression_text):
-                        text = str(text)
-                        if text == "Not given.":
-                            text = ""
-
-                        text_final = text_final + text
-
-                    onehotlabels = test_df[test_df["VolumeName"] == accession_number]["one_hot_labels"].values
-                    if len(onehotlabels) > 0:
-                        samples.append((nii_file, text_final, onehotlabels[0]))
-                        self.paths.append(nii_file)
+                    samples.append(nii_file)
+                    self.paths.append(nii_file)
         return samples
 
     def __len__(self):
@@ -121,11 +88,7 @@ class CTReportDatasetinfer(Dataset):
         return tensor
 
     def __getitem__(self, index):
-        nii_file, input_text, onehotlabels = self.samples[index]
+        nii_file = self.paths[index]
         video_tensor = self.nii_to_tensor(nii_file)
-        input_text = input_text.replace('"', '')  
-        input_text = input_text.replace('\'', '')  
-        input_text = input_text.replace('(', '')  
-        input_text = input_text.replace(')', '')  
-        name_acc = nii_file.split("/")[-2]
-        return video_tensor, input_text, onehotlabels, name_acc
+        name_acc = nii_file.split("/")[-1]
+        return video_tensor, name_acc

@@ -45,12 +45,16 @@ def convert_image_to_fn(img_type, image):
 
 # image related helpers fnuctions and dataset
 
+# Define the lambda function as a regular function
+def convert_to_rgb(img):
+    return img.convert('RGB') if img.mode != 'RGB' else img
+
 class ImageDataset(Dataset):
     def __init__(
         self,
         folder,
         image_size,
-        exts = ['jpg', 'jpeg', 'png']
+        exts = ['jpg', 'jpeg', 'png', 'nii']
     ):
         super().__init__()
         self.folder = folder
@@ -64,7 +68,7 @@ class ImageDataset(Dataset):
         print(f'{len(self.paths)} training samples found at {folder}')
 
         self.transform = T.Compose([
-            T.Lambda(lambda img: img.convert('RGB') if img.mode != 'RGB' else img),
+            T.Lambda(convert_to_rgb),
             T.Resize(image_size),
             T.RandomHorizontalFlip(),
             T.CenterCrop(image_size),

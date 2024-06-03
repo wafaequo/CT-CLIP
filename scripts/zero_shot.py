@@ -141,7 +141,6 @@ class CTClipInference(nn.Module):
         num_train_steps,
         batch_size,
         data_folder: "external_valid",
-        reports_file: "data_reports.xslx",
         lr = 1e-4,
         wd = 0.,
         max_grad_norm = 0.5,
@@ -169,7 +168,7 @@ class CTClipInference(nn.Module):
         self.max_grad_norm = max_grad_norm
         self.lr=lr
         # Load the pre-trained weights
-        self.ds = CTReportDatasetinfer(data_folder=data_folder, csv_file=reports_file,labels=labels)
+        self.ds = CTReportDatasetinfer(data_folder=data_folder, labels=labels)
 
         # Split dataset into train and validation sets
 

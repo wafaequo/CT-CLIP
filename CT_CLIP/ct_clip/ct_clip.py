@@ -589,7 +589,7 @@ class CTCLIP(nn.Module):
     def load(self, path):
         path = Path(path)
         assert path.exists()
-        pt = torch.load(str(path))
+        pt = torch.load(str(path), map_location=torch.device('cpu'))
         self.load_state_dict(pt)
 
     def forward(

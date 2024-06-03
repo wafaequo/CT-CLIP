@@ -151,16 +151,13 @@ class CTVIT_inf(nn.Module):
         self.grad_accum_every = grad_accum_every
 
         all_parameters = set(vae.parameters())
-        discr_parameters = set(vae.discr.parameters())
-        vae_parameters = all_parameters - discr_parameters
+        vae_parameters = all_parameters
 
         self.vae_parameters = vae_parameters
 
         self.optim = get_optimizer(vae_parameters, lr = lr, wd = wd)
-        self.discr_optim = get_optimizer(discr_parameters, lr = lr*0.01, wd = wd)
 
         self.max_grad_norm = max_grad_norm
-        self.discr_max_grad_norm = discr_max_grad_norm
 
         # create dataset
         dataset_klass = ImageDataset if train_on_images else VideoDataset
@@ -206,13 +203,11 @@ class CTVIT_inf(nn.Module):
         (
             self.vae,
             self.optim,
-            self.discr_optim,
             self.dl_iter,
             self.valid_dl_iter
         ) = self.accelerator.prepare(
             self.vae,
             self.optim,
-            self.discr_optim,
             self.dl_iter,
             self.valid_dl_iter
         )
@@ -235,8 +230,7 @@ class CTVIT_inf(nn.Module):
 
         pkg = dict(
             model = self.accelerator.get_state_dict(self.vae),
-            optim = self.optim.state_dict(),
-            discr_optim = self.discr_optim.state_dict()
+            optim = self.optim.state_dict()
         )
         torch.save(pkg, path)
 
@@ -249,7 +243,6 @@ class CTVIT_inf(nn.Module):
         vae.load_state_dict(pkg['model'])
 
         self.optim.load_state_dict(pkg['optim'])
-        self.discr_optim.load_state_dict(pkg['discr_optim'])
 
     def print(self, msg):
         self.accelerator.print(msg)
@@ -272,7 +265,7 @@ class CTVIT_inf(nn.Module):
 
     def infer(self, log_fn = noop):
         device = self.device
-        device=torch.device('cuda')
+        device=torch.device('cpu')
         steps = int(self.steps.item())
         apply_grad_penalty = not (steps % self.apply_grad_penalty_every)
         if True:
@@ -281,22 +274,22 @@ class CTVIT_inf(nn.Module):
             if self.use_ema:
                 vaes_to_evaluate = ((self.ema_vae.ema_model, f'{steps}.ema'),) + vaes_to_evaluate
             
-            for model, filename in vaes_to_evaluate:
+            for model, file_name in vaes_to_evaluate:
                 model.eval()
                 for i in range(len(self.valid_ds)): 
                     file_name=self.valid_ds.dataset.paths[self.valid_ds.indices[i]]
                     name = str(file_name).split("/")[-1]
-                    filename = str(file_name).split("/")[-2]
+                    #filename = str(file_name).split("/")[-2]
                     valid_data = next(self.valid_dl_iter)
 
                     is_video = valid_data.ndim == 5
-                    device=torch.device('cuda')
+                    device=torch.device('cpu')
                     valid_data = valid_data.to(device)
 
                     recons = model(valid_data, return_recons_only = True)
 
-                    sampled_videos_path = self.results_folder / f'samples.{filename}'
-                    (sampled_videos_path).mkdir(parents = True, exist_ok = True)
+                    #sampled_videos_path = self.results_folder / f'samples.{filename}'
+                    #(sampled_videos_path).mkdir(parents = True, exist_ok = True)
                     i=0
                     for tensor in recons.unbind(dim = 0):
                         tensor_to_nifti(tensor, str(sampled_videos_path / f'{name}.nii.gz'))

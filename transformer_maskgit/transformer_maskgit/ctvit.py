@@ -361,7 +361,9 @@ class CTViT(nn.Module):
         return_only_codebook_ids = False,
         return_encoded_tokens=False
     ):
+        return("Number of dimensions is valid:", video.ndim)
         assert video.ndim in {4, 5}
+        
 
         is_image = video.ndim == 4
         #print(video.shape)

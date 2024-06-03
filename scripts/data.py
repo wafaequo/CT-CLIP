@@ -13,16 +13,14 @@ import nibabel as nib
 import tqdm
 
 class CTReportDataset(Dataset):
-    def __init__(self, data_folder, csv_file, min_slices=20, resize_dim=500, force_num_frames=True):
+    def __init__(self, data_folder, min_slices=20, resize_dim=500, force_num_frames=True):
         self.data_folder = data_folder
         self.min_slices = min_slices
-        self.accession_to_text = self.load_accession_text(csv_file)
-        self.paths=[]
         self.samples = self.prepare_samples()
         percent = 100
         #num_files = int((len(self.samples) * percent) / 100)
         #self.samples = self.samples[:num_files]
-        print(len(self.samples))
+        print(f'Number of samples: {len(self.samples)}')
 
 
 
@@ -47,24 +45,8 @@ class CTReportDataset(Dataset):
         samples = []
         for patient_folder in tqdm.tqdm(glob.glob(os.path.join(self.data_folder, '*'))):
             for accession_folder in glob.glob(os.path.join(patient_folder, '*')):
-
                 for nii_file in glob.glob(os.path.join(accession_folder, '*.npz')):
-                    accession_number = nii_file.split("/")[-1]
-                    accession_number = accession_number.replace(".npz", ".nii.gz")
-                    if accession_number not in self.accession_to_text:
-                        continue
-
-                    impression_text = self.accession_to_text[accession_number]
-
-                    if impression_text == "Not given.":
-                        impression_text=""
-
-                    input_text_concat = ""
-                    for text in impression_text:
-                        input_text_concat = input_text_concat + str(text)
-                    input_text = f'{impression_text}'
-                    samples.append((nii_file, input_text_concat))
-                    self.paths.append(nii_file)
+                    samples.append(nii_file)
         return samples
 
     def __len__(self):
@@ -122,11 +104,6 @@ class CTReportDataset(Dataset):
 
     
     def __getitem__(self, index):
-        nii_file, input_text = self.samples[index]
+        nii_file = self.samples[index]
         video_tensor = self.nii_to_tensor(nii_file)
-        input_text = input_text.replace('"', '')  
-        input_text = input_text.replace('\'', '')  
-        input_text = input_text.replace('(', '')  
-        input_text = input_text.replace(')', '')  
-
-        return video_tensor, input_text
+        return video_tensor, nii_file.split("/")[-2]

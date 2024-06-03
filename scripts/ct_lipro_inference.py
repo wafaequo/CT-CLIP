@@ -18,87 +18,62 @@ def sigmoid(tensor):
     return 1 / (1 + torch.exp(-tensor))
 
 class ImageLatentsClassifier(nn.Module):
-    def __init__(self, trained_model, latent_dim, num_classes, dropout_prob=0.3):
+    def __init__(self, trained_model, latent_dim, dropout_prob=0.3):
         super(ImageLatentsClassifier, self).__init__()
         self.trained_model = trained_model
         self.dropout = nn.Dropout(dropout_prob)  # Add dropout layer
         self.relu = nn.ReLU()
-        self.classifier = nn.Linear(latent_dim, num_classes)  # Assuming trained_model.image_latents_dim gives the size of the image_latents
 
     def forward(self, latents=False, *args, **kwargs):
         kwargs['return_latents'] = True
         _, image_latents = self.trained_model(*args, **kwargs)
         image_latents = self.relu(image_latents)
-        if latents:
-            return image_latents
-        image_latents = self.dropout(image_latents)  # Apply dropout on the latents
+        image_latents = self.dropout(image_latents)
+        return image_latents
 
-        return self.classifier(image_latents)
 
     def save(self, file_path):
         torch.save(self.state_dict(), file_path)
+        
     def load(self, file_path):
-        loaded_state_dict = torch.load(file_path)
-        self.load_state_dict(loaded_state_dict)
+        
+        loaded_state_dict = torch.load(file_path, map_location=torch.device('cpu'))
+        model_state_dict = self.state_dict()
+        
+        filtered_state_dict = {k: v for k, v in loaded_state_dict.items() if k in model_state_dict and model_state_dict[k].shape == v.shape}
+        
+        model_state_dict.update(filtered_state_dict)
+        self.load_state_dict(model_state_dict)
 
 def evaluate_model(args, model, dataloader, device):
-    model.eval()  # Set the model to evaluation mode
     model = model.to(device)
-    correct = 0
-    total = 0
-    predictedall=[]
-    realall=[]
-    logits = []
+    model.eval()  # Set the model to evaluation mode
+    all_features = []
     accs = []
     with torch.no_grad():
 
         for batch in tqdm.tqdm(dataloader):
-            inputs, _, labels, acc_no = batch
-            labels = labels.float().to(device)
+            inputs, acc_no = batch
             inputs = inputs.to(device)
-            # Assuming your model takes in the same inputs as during training
-            text_tokens = tokenizer("", return_tensors="pt", padding="max_length", truncation=True, max_length=200).to(device)
-            output = model(False, text_tokens, inputs,  device=device)
-            realall.append(labels.detach().cpu().numpy()[0])
-            save_out = sigmoid(torch.tensor(output)).cpu().numpy()
-            predictedall.append(save_out[0])
+            features = model(inputs, device=device)
+            all_features.append(features.cpu().numpy())
             accs.append(acc_no[0])
             print(acc_no[0], flush=True)
-
+            
         plotdir = args.save
         os.makedirs(plotdir, exist_ok=True)
-        logits = np.array(logits)
+        
+        all_features = np.concatenate(all_features, axis=0)
 
         with open(f"{plotdir}accessions.txt", "w") as file:
             for item in accs:
                 file.write(item[0] + "\n")
-
-        pathologies = ['Medical material','Arterial wall calcification', 'Cardiomegaly', 'Pericardial effusion','Coronary artery wall calcification', 'Hiatal hernia','Lymphadenopathy', 'Emphysema', 'Atelectasis', 'Lung nodule','Lung opacity', 'Pulmonary fibrotic sequela', 'Pleural effusion', 'Mosaic attenuation pattern','Peribronchial thickening', 'Consolidation', 'Bronchiectasis','Interlobular septal thickening']
-
-        realall=np.array(realall)
-        predictedall=np.array(predictedall)
-
-        np.savez(f"{plotdir}labels_weights.npz", data=realall)
-        np.savez(f"{plotdir}predicted_weights.npz", data=predictedall)
-
-        dfs=evaluate_internal(predictedall,realall,pathologies, plotdir)
-
-        writer = pd.ExcelWriter(f'{plotdir}aurocs.xlsx', engine='xlsxwriter')
-
-        dfs.to_excel(writer, sheet_name='Sheet1', index=False)
-
-        writer.close()
-
-
-
+                
+        np.savez(f"{plotdir}features.npz", data=all_features)
 
 if __name__ == '__main__':
     args = parse_arguments()  # Assuming this function provides necessary arguments
 
-    tokenizer = BertTokenizer.from_pretrained('microsoft/BiomedVLP-CXR-BERT-specialized',do_lower_case=True)
-    text_encoder = BertModel.from_pretrained("microsoft/BiomedVLP-CXR-BERT-specialized")
-
-    text_encoder.resize_token_embeddings(len(tokenizer))
 
     image_encoder = CTViT(
             dim = 512,
@@ -115,9 +90,9 @@ if __name__ == '__main__':
 
     clip = CTCLIP(
             image_encoder = image_encoder,
-            text_encoder = text_encoder,
+            text_encoder = None,
             dim_image = 2097152,
-            dim_text = 768,
+            dim_text = 0,
             dim_latent = 512,
             extra_latent_projection = False,         # whether to use separate projections for text-to-image vs image-to-text comparisons (CLOOB)
             use_mlm=False,
@@ -125,17 +100,16 @@ if __name__ == '__main__':
             use_all_token_embeds = False
 
         )
-
-    num_classes = 18  # you need to specify the number of classes here
-    image_classifier = ImageLatentsClassifier(clip, 512, num_classes)
+    
+    image_classifier = ImageLatentsClassifier(clip, 512)
     zero_shot = copy.deepcopy(image_classifier)
 
     image_classifier.load(args.pretrained)  # Assuming args.checkpoint_path is the path to the saved checkpoint
 
 
     # Prepare the evaluation dataset
-    ds = CTReportDatasetinfer(data_folder=args.data_folder, csv_file=args.reports_file,labels=args.labels)
-    dl = DataLoader(ds, num_workers=8, batch_size=1, shuffle=False)
+    ds = CTReportDatasetinfer(data_folder=args.data_folder, min_slices=20, resize_dim=500)
+    dl = DataLoader(ds, num_workers=4, batch_size=12, shuffle=False)
 
     # Evaluate the model
-    evaluate_model(args, image_classifier, dl, torch.device('cuda'))
+    evaluate_model(args, image_classifier, dl, torch.device('cpu'))
