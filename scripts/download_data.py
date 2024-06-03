@@ -12,7 +12,7 @@ start_at = 0
 
 repo_id = 'ibrahimhamamci/CT-RATE'
 directory_name = f'dataset/{split}/'
-hf_token = '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'
+hf_token = 'EIGEN TOKEN'
 
 data = pd.read_csv(f'{split}_labels.csv')
 
